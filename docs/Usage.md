@@ -117,13 +117,81 @@ clusterctl init --infrastructure proxmox --ipam in-cluster --core cluster-api:v1
 **Note:** The Proxmox credentials are optional when installing the provider,
 but they are required when creating a cluster.
 
+### Installing a pre-release from a private registry
+
+The controller image and the `clusterctl` component manifest are two separate
+artifacts. The image registry provides the controller image, while
+`infrastructure-components.yaml` contains the CRDs, RBAC, webhooks, and
+Deployment that `clusterctl` applies to the management cluster.
+
+For a locally built or privately published image, set the image used by the
+Kustomize deployment and apply the generated manifests from the repository:
+
+```bash
+REGISTRY_IMAGE=registry.example.com/ionos/cluster-api-provider-proxmox:0.10.0-rc.0
+
+make manifests
+make deploy IMG="${REGISTRY_IMAGE}"
+```
+
+This installs the CRDs and deploys the controller in the management cluster.
+If the registry is private, create an image pull secret in the namespace where
+the controller is deployed and reference it from the manager Deployment before
+applying the manifests:
+
+```bash
+kubectl create secret docker-registry registry-credentials \
+  --namespace capmox-system \
+  --docker-server=registry.example.com \
+  --docker-username="${REGISTRY_USER}" \
+  --docker-password="${REGISTRY_PASSWORD}"
+
+kubectl patch deployment capmox-controller-manager \
+  --namespace capmox-system \
+  --type='strategic' \
+  --patch='{"spec":{"template":{"spec":{"imagePullSecrets":[{"name":"registry-credentials"}]}}}}'
+```
+
+Then verify that the CRDs and controller are ready:
+
+```bash
+kubectl get crd | grep proxmox
+kubectl get deployment -A | grep proxmox
+kubectl get pods -A | grep proxmox
+```
+
+When the release publishes an `infrastructure-components.yaml` file, the
+provider can instead be installed and versioned with `clusterctl`:
+
+```bash
+clusterctl init \
+  --core cluster-api:v1.12.9 \
+  --bootstrap kubeadm:v1.12.9 \
+  --control-plane kubeadm:v1.12.9 \
+  --ipam in-cluster:v1.1.0 \
+  --infrastructure proxmox:v0.10.0-rc.0
+```
+
+For an existing installation, inspect the available upgrade first and then
+apply the pre-release:
+
+```bash
+clusterctl upgrade plan
+clusterctl upgrade apply --infrastructure proxmox:v0.10.0-rc.0
+```
+
+Do not apply only the new CRDs and then create a workload cluster: the
+controller running the matching image must also be deployed in the management
+cluster. After installation or upgrade, wait for the controller rollout before
+running `clusterctl generate cluster`.
+
 ### Create a Workload Cluster
 To create a new cluster, you need to generate a cluster manifest.
 
 ```bash
 $ clusterctl generate cluster proxmox-quickstart \
     --infrastructure proxmox \
-    --kubernetes-version v1.34.11 \
+    --kubernetes-version v1.34.8 \
     --control-plane-machine-count 1 \
     --worker-machine-count 3 > cluster.yaml
 
@@ -235,7 +303,7 @@ Now, you can create a cluster using the cilium flavor:
 ```bash
 $ clusterctl generate cluster proxmox-cilium \
 --infrastructure proxmox \
---kubernetes-version v1.34.11 \
+--kubernetes-version v1.34.8 \
 --control-plane-machine-count 1 \
 --worker-machine-count 3 \
 --flavor cilium > cluster.yaml
@@ -261,7 +329,7 @@ kubectl create cm $FLAVOR_NAME --from-file=data=$CRS_FILE
 ```bash
 $ clusterctl generate cluster proxmox-crs \
 --infrastructure proxmox \
---kubernetes-version v1.34.11 \
+--kubernetes-version v1.34.8 \
 --control-plane-machine-count 1 \
 --worker-machine-count 3 \
 --flavor $FLAVOR_NAME > cluster-crs.yaml
@@ -290,7 +358,7 @@ Then, you can generate a cluster manifest with the following command:
 ```shell
 $ clusterctl generate cluster flatcar-quickstart \
     --infrastructure proxmox \
-    --kubernetes-version v1.34.11 \
+    --kubernetes-version v1.34.8 \
     --control-plane-machine-count 3 \
     --worker-machine-count 3 \
     --flavor flatcar > cluster.yaml
@@ -317,7 +385,7 @@ If you need anything specific that requires a more complex setup, we recommend t
 ```
 $ clusterctl generate custom-cluster proxmox-quickstart \
     --infrastructure proxmox \
-    --kubernetes-version v1.34.11 \
+    --kubernetes-version v1.34.8 \
     --control-plane-machine-count 1 \
     --worker-machine-count 3 \
     --from ~/workspace/custom-cluster-template.yaml > custom-cluster.yaml
