@@ -72,6 +72,12 @@ func (r *ProxmoxClusterReconciler) SetupWithManager(ctx context.Context, mgr ctr
 		Watches(&clusterv1.Cluster{},
 			handler.EnqueueRequestsFromMapFunc(clusterutil.ClusterToInfrastructureMapFunc(ctx, infrav1.GroupVersion.WithKind(infrav1.ProxmoxClusterKind), mgr.GetClient(), &infrav1.ProxmoxCluster{})),
 			builder.WithPredicates(predicates.ClusterUnpaused(r.Scheme, ctrl.LoggerFrom(ctx)))).
+		Watches(&clusterv1.Machine{},
+			handler.EnqueueRequestsFromMapFunc(machineToProxmoxClusterMap),
+			builder.WithPredicates(machineSpreadPredicates())).
+		Watches(&infrav1.ProxmoxMachine{},
+			handler.EnqueueRequestsFromMapFunc(proxmoxMachineToProxmoxClusterMap(mgr.GetClient())),
+			builder.WithPredicates(proxmoxMachineSpreadPredicates())).
 		WithEventFilter(predicates.ResourceIsNotExternallyManaged(r.Scheme, ctrl.LoggerFrom(ctx))).
 		Complete(r)
 }
@@ -82,6 +88,7 @@ func (r *ProxmoxClusterReconciler) SetupWithManager(ctx context.Context, mgr ctr
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxclusters/finalizers,verbs=update
 
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters;clusters/status,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machines,verbs=get;list;watch;update;patch
 
 // +kubebuilder:rbac:groups=ipam.cluster.x-k8s.io,resources=inclusterippools,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ipam.cluster.x-k8s.io,resources=globalinclusterippools,verbs=get;list;watch;create;update;patch;delete
@@ -240,6 +247,13 @@ func (r *ProxmoxClusterReconciler) reconcileNormal(ctx context.Context, clusterS
 		Status: metav1.ConditionTrue,
 		Reason: clusterv1.ProvisionedReason,
 	})
+
+	// Keep the zone balance across scale-downs by designating the MachineSet
+	// victim CAPI should prefer. Best effort: an error is logged but never
+	// blocks cluster readiness.
+	if err := r.reconcileZonalSpread(ctx, clusterScope); err != nil {
+		clusterScope.Logger.Error(err, "Failed to balance machines across availability zones")
+	}
 
 	clusterScope.SetReady()
 
