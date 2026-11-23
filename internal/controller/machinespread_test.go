@@ -26,7 +26,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -215,7 +214,7 @@ func TestReconcileZonalSpread(t *testing.T) {
 			APIVersion: clusterv1.GroupVersion.String(),
 			Kind:       "KubeadmControlPlane",
 			Name:       "control-plane",
-			Controller: ptr.To(true),
+			Controller: new(true),
 		}
 		cpMachine := spreadMachine("control-plane-0", "az1", 45*time.Minute, now)
 		cpMachine.OwnerReferences = []metav1.OwnerReference{cpOwner}
